@@ -16,6 +16,7 @@ graph LR
 
     subgraph "Ingestion Pipeline"
         Debezium[Debezium Connect] -- "Real-time JSON" --> Kafka((Kafka Cluster))
+        Kafka -- "View Data" --> Console[Redpanda Console]
     end
 
     subgraph "Aggregation Layer"
@@ -32,6 +33,7 @@ graph LR
     style Kafka fill:#fff3e0,stroke:#e65100
     style MinIO fill:#f3e5f5,stroke:#4a148c
     style Vector fill:#f96,stroke:#333
+    style Console fill:#ffcdd2,stroke:#b71c1c
 ```
 
 - PostgreSQL: Source database with logical replication enabled.
@@ -39,13 +41,15 @@ graph LR
 - Kafka: Acts as a resilient buffer (Persistence layer).
 - Vector: Aggregates fine-grained events into compressed micro-batches.
 - MinIO: High-performance S3-compatible object storage for data archiving.
+- **Redpanda Console**: Web-based UI to visualize real-time message flow in Kafka.
 
 ## Key Features
 
-- Peak Performance: Verified throughput of 130,000+ TPS on a standard developer machine.
-- Disaster Recovery: Built-in Circuit Breaker mechanism using max_slot_wal_keep_size to protect the primary DB during downstream outages.
-- Micro-batching: Automatically groups 1000s of small JSON events into a single compressed .gz file to minimize storage costs and API calls.
-- Full Metadata: Captures DB-generated IDs, transaction IDs, and LSNs without secondary queries.
+- **Zero-Dependency Stress Tests**: No Python or external runtimes required (Docker-based).
+- **Peak Performance**: Verified throughput of 130,000+ TPS on a standard developer machine.
+- **Observability Stack**: Built-in real-time throughput dashboards and message inspectors.
+- **Disaster Recovery**: Built-in Circuit Breaker mechanism using `max_slot_wal_keep_size` to protect the primary DB during downstream outages.
+- **Micro-batching**: Automatically groups 1000s of small JSON events into a single compressed .gz file to minimize storage costs and API calls.
 
 ## Quick Start
 
@@ -55,7 +59,6 @@ Before you begin, ensure you have the following installed:
 - Docker & Docker Compose (Latest version)
 - Make (To run Makefile commands)
 - Curl (To register connectors via API)
-- Python 3 & psycopg2 (Required for stress-trickle mode)
 - Minimum 4GB RAM allocated to Docker
 
 ### 1. Launch Infrastructure
@@ -79,7 +82,7 @@ make stress-bulk
 ```
 
 #### Mode 2: Continuous Trickle
-Simulates real-time user traffic (5-10 orders per second). Great for watching live data flow.
+Simulates real-time user traffic (5-10 orders per second) using a shell-based loop. **No Python required.**
 ```bash
 make stress-trickle
 ```
@@ -90,11 +93,13 @@ Extreme high-speed loop using internal DB procedures. Use this to test the physi
 make stress-fury
 ```
 
-### 4. Verify Results
+### 4. Observability & Monitoring
 
-1. **Web UI**: Open http://localhost:9001 (User: minio_admin, Password: minio_password).
-2. **Data Lake**: Navigate to modern-cdc-bucket -> cdc-raw.
-3. **Structure**: Data is automatically partitioned by table and date.
+The sandbox includes built-in tools to watch the data flow:
+
+1.  **Kafka Console**: Open http://localhost:8080 to see real-time JSON messages passing through topics.
+2.  **Throughput Dashboard**: Run `make vector-top` to see real-time ingestion/sink metrics (Events In/Out).
+3.  **MinIO Web UI**: Open http://localhost:9001 (minio_admin / minio_password) to verify data partitioning in S3.
 
 ## Cleanup
 
@@ -116,9 +121,9 @@ docker-compose stop
 ## Advanced Scenarios
 
 This sandbox is designed for learning and testing:
-- Consumer Lag Recovery: Stop Kafka and see how Postgres handles WAL accumulation.
-- Self-Healing: Reboot the database and watch the pipeline automatically re-establish connectivity.
-- Schema Evolution: Add columns to Postgres and observe how Debezium adapts.
+- **Consumer Lag Recovery**: Stop Kafka and see how Postgres handles WAL accumulation.
+- **Self-Healing**: Reboot the database and watch the pipeline automatically re-establish connectivity.
+- **Schema Evolution**: Add columns to Postgres and observe how Debezium adapts.
 
 ## Production Readiness
 

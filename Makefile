@@ -1,6 +1,6 @@
 # Modern CDC Sandbox Makefile
 
-.PHONY: up down setup status stress-bulk stress-trickle stress-fury web-ui help
+.PHONY: up down setup status stress-bulk stress-trickle stress-fury vector-top web-ui help
 
 # 1. Infrastructure
 up:
@@ -9,7 +9,7 @@ up:
 	@sleep 60
 	@echo "Creating MinIO bucket..."
 	@docker exec $$(docker ps -qf "name=minio") mc alias set myminio http://localhost:9000 minio_admin minio_password
-	@docker exec $$(docker ps -qf "name=minio") mc mb myminio/modern-cdc-bucket || true
+	@docker exec $$(docker ps -qf "name=minio") /bin/sh -c "mc ls myminio/modern-cdc-bucket >/dev/null 2>&1 || mc mb myminio/modern-cdc-bucket"
 
 # 2. Setup
 setup:
@@ -45,13 +45,18 @@ stress-fury:
 	@echo "Mode 3: Fury Mode starting..."
 	@docker exec $$(docker ps -qf "name=postgres") psql -U sandbox_user -d sandbox_db -c "CALL start_fury_traffic(10);"
 
-# 6. Cleanup
+# 6. Observability
+vector-top:
+	@docker exec -it $$(docker ps -qf "name=vector") vector top
+
+# 7. Cleanup
 down:
 	docker-compose down -v
 
-# 7. Monitoring
+# 8. Monitoring
 web-ui:
 	@echo "------------------------------------------------------------------"
+	@echo "Kafka Console:   http://localhost:8080 (Real-time Message Flow)"
 	@echo "MinIO Web UI:    http://localhost:9001 (minio_admin / minio_password)"
 	@echo "Kafka Connect:   http://localhost:8083/connectors"
 	@echo "Postgres Port:   5434"
@@ -62,3 +67,6 @@ help:
 	@echo "  make stress-bulk    - Insert 100k rows in one shot"
 	@echo "  make stress-trickle - Continuous slow traffic (Shell Loop)"
 	@echo "  make stress-fury    - Extreme high-speed internal loop"
+	@echo "Monitoring:"
+	@echo "  make web-ui         - Show all UI endpoints"
+	@echo "  make vector-top     - Real-time throughput dashboard"

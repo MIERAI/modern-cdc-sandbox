@@ -74,3 +74,13 @@ services:
       - AWS_ACCESS_KEY_ID=minio_admin
       - AWS_SECRET_ACCESS_KEY=minio_password
     entrypoint: ["/usr/local/bin/vector", "--config", "/etc/vector/vector.toml"]
+
+  # 6. 可视化控制台 (上帝视角)
+  console:
+    image: docker.redpanda.com/redpandadata/console:latest
+    depends_on:
+      - kafka
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_BROKERS: kafka:29092
