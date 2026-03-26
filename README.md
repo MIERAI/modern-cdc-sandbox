@@ -48,5 +48,11 @@ This sandbox is designed for learning and testing:
 - **Self-Healing**: Reboot the database and watch the pipeline automatically re-establish connectivity.
 - **Schema Evolution**: Add columns to Postgres and observe how Debezium adapts.
 
+## 🛡️ Production Readiness
+
+While this sandbox is perfect for local experimentation, running a CDC pipeline at scale requires additional hardening (High Availability, Schema Registry, Monitoring). 
+
+Check out the [Production Readiness Guide](./docs/production-readiness.md) for a detailed breakdown of the gaps and solutions.
+
 ## 📄 License
 MIT
