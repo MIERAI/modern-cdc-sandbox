@@ -28,8 +28,17 @@ stress-bulk:
 
 # 4. Mode 2: Continuous Trickle (Simulated real-time traffic)
 stress-trickle:
-	@echo "Mode 2: Continuous Trickle starting..."
-	@python3 scripts/traffic-generator.py
+	@echo "Mode 2: Continuous Trickle starting (Shell Loop)..."
+	@echo "Press [Ctrl+C] to stop"
+	@while true; do \
+		docker exec $$(docker ps -qf "name=postgres") psql -U sandbox_user -d sandbox_db -t -c \
+			"INSERT INTO orders (user_id, product_id, quantity, order_data) \
+			 SELECT (random()*99+1)::int, (random()*99+1)::int, (random()*5+1)::int, \
+			 jsonb_build_object('source', 'trickle_shell', 'ts', now()) \
+			 RETURNING 'Order Injected: User ' || user_id || ' -> Product ' || product_id;" \
+			 | sed 's/^[[:space:]]*//;s/[[:space:]]*$$//'; \
+		sleep 0.2; \
+	done
 
 # 5. Mode 3: Fury Mode (Extreme high-speed loop)
 stress-fury:
@@ -51,5 +60,5 @@ web-ui:
 help:
 	@echo "Available stress modes:"
 	@echo "  make stress-bulk    - Insert 100k rows in one shot"
-	@echo "  make stress-trickle - Continuous slow traffic (Python)"
+	@echo "  make stress-trickle - Continuous slow traffic (Shell Loop)"
 	@echo "  make stress-fury    - Extreme high-speed internal loop"
