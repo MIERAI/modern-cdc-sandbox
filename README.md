@@ -8,6 +8,32 @@ This project simulates a high-performance data pipeline transferring real-time d
 
 PostgreSQL -> Debezium -> Kafka -> Vector -> MinIO (S3)
 
+```mermaid
+graph LR
+    subgraph "Production Zone"
+        DB[(PostgreSQL)] -- "WAL Logs" --> Debezium
+    end
+
+    subgraph "Ingestion Pipeline"
+        Debezium[Debezium Connect] -- "Real-time JSON" --> Kafka((Kafka Cluster))
+    end
+
+    subgraph "Aggregation Layer"
+        Kafka -- "Continuous Stream" --> Vector[Vector Agent]
+        Vector -- "Gzip & Batch" --> MinIO
+    end
+
+    subgraph "Data Lake"
+        MinIO[MinIO / S3 Storage]
+    end
+
+    %% Styles
+    style DB fill:#e1f5fe,stroke:#01579b
+    style Kafka fill:#fff3e0,stroke:#e65100
+    style MinIO fill:#f3e5f5,stroke:#4a148c
+    style Vector fill:#f96,stroke:#333
+```
+
 - PostgreSQL: Source database with logical replication enabled.
 - Debezium: Captures row-level changes (INSERT/UPDATE/DELETE) as events.
 - Kafka: Acts as a resilient buffer (Persistence layer).
