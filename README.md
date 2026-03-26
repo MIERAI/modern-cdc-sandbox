@@ -66,11 +66,26 @@ make stress-fury
 
 ### 4. Verify Results
 
-1. **Web UI**: Open http://localhost:9001 (User: `minio_admin`, Password: `minio_password`).
-2. **Data Lake**: Navigate to `modern-cdc-bucket` -> `cdc-raw`.
-3. **Structure**: Data is automatically partitioned by table and date:
-   `cdc-raw/sandbox.public.orders/date=YYYY-MM-DD/xxxx.log.gz`
-4. **Content**: Download and unzip a file to see the standard Debezium JSON format containing the `after` image and the database-generated `id`.
+1. **Web UI**: Open http://localhost:9001 (User: minio_admin, Password: minio_password).
+2. **Data Lake**: Navigate to modern-cdc-bucket -> cdc-raw.
+3. **Structure**: Data is automatically partitioned by table and date.
+
+## Cleanup
+
+To stop the environment, choose one of the following methods:
+
+### Option 1: Full Teardown (Recommended)
+Stops all containers and **deletes all data** (volumes). Use this to restore a clean state.
+```bash
+make down
+```
+
+### Option 2: Temporary Stop
+Stops the containers but **preserves your data**. Use this if you want to resume later.
+```bash
+docker-compose stop
+```
+*To resume, run `docker-compose start`.*
 
 ## Advanced Scenarios
 

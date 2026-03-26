@@ -11,32 +11,39 @@ This document outlines the gaps between this Experimental Sandbox and a Enterpri
 | **Debezium** | Standalone Mode | Distributed Mode (Connect Cluster) |
 | **MinIO** | Local Container | Managed Service (GCS / AWS S3 / Azure Blob) |
 
-## 2. Data Consistency & Schema Registry
+## 2. Operational Risks & Mitigations (Crucial)
+
+### Risk 1: The "Catch-up Spike" (CPU Exhaustion)
+**Scenario**: If the CDC Pod (Debezium) or Downstream (Kafka) is down for 1 hour, a massive amount of WAL logs will accumulate in Postgres.
+**Problem**: Upon restart, Debezium will attempt to "catch up" by reading all pending logs at maximum speed. This causes a **massive CPU spike** on the Primary DB, potentially throttling your main business application.
+**Mitigation**:
+- **Throttling**: Limit Debezium processing speed using `max.batch.size` and `poll.interval.ms`.
+- **Read-Only Extraction**: Upgrade to **PostgreSQL 16+** and enable logical decoding from a **Read-Only Standby**. This physically isolates the extraction load from the primary write traffic.
+
+### Risk 2: WAL Accumulation (Disk Overflow)
+**Scenario**: If Kafka is unreachable for a long period (e.g., a weekend).
+**Problem**: The Replication Slot will hold WAL logs on the DB disk. At 132GB/day, this can fill up 1TB of disk space in a few days.
+**Mitigation**:
+- **Circuit Breaker**: Set `max_slot_wal_keep_size` (e.g., 200GB). It's better to lose the sync lag than to crash the entire production database.
+- **Monitoring**: Alert when `pg_replication_slots.active` is `false` or lag exceeds 50GB.
+
+### Risk 3: Downstream Bottleneck (Cascading Failure)
+**Scenario**: GCS or S3 experiences a slow-down or outage.
+**Problem**: High-frequency JSON events (280M+ per day) will pile up in Kafka. If Kafka's disk is too small, it will stop accepting new data from Debezium.
+**Mitigation**:
+- **Kafka Retention**: Set a strict `retention.bytes` policy on Kafka topics.
+- **Backpressure**: Vector/Kafka Connect should have dedicated monitoring for sink errors.
+
+## 3. Data Consistency & Schema Registry
 
 In production, raw JSON is risky. A field change in Postgres could break downstream consumers.
 - Solution: Implement Confluent Schema Registry.
 - Format: Transition from JSON to Avro or Protobuf for schema enforcement and payload compression.
 
-## 3. Security Hardening
+## 4. Security Hardening
 
 - Encryption: TLS/SSL encryption for all data-in-transit (Postgres -> Kafka -> Vector -> GCS).
 - Authentication: SASL/SCRAM for Kafka and RBAC for Database access.
-- Network: VPC peering and Private Service Connect to avoid exposure to the public internet.
-
-## 4. Observability (The "Blind Spot")
-
-A production pipeline is useless if you don't know it's lagging.
-- Metrics: Prometheus scraping Kafka JMX metrics and Debezium JMX.
-- Visuals: Grafana Dashboards monitoring:
-    - Consumer Lag: How many events behind is Kafka?
-    - Replication Lag: Is Postgres holding too much WAL?
-    - Sink Throughput: How many MiB/s are hitting GCS?
-
-## 5. Circuit Breaker Configuration
-
-The sandbox demonstrates max_slot_wal_keep_size. In production, this must be tuned:
-- Calculation: Total Disk Space - (Snapshot Size * 1.2) = Safety Budget for WAL.
-- Alerting: Trigger PagerDuty when WAL usage exceeds 70% of the budget.
 
 ---
 
