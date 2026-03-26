@@ -1,0 +1,24 @@
+[sources.kafka_orders]
+type = "kafka"
+bootstrap_servers = "kafka:29092"
+group_id = "vector-batch-sync-v2" # 更换组名以确保重新开始读取
+topics = ["sandbox.public.orders", "sandbox.public.users", "sandbox.public.products"]
+auto_offset_reset = "earliest" # 从头开始读
+
+[sinks.minio_storage]
+type = "aws_s3"
+inputs = ["kafka_orders"]
+bucket = "modern-cdc-bucket"
+endpoint = "http://minio:9000"
+region = "us-east-1"
+compression = "gzip"
+force_path_style = true
+key_prefix = "cdc-raw/{{ topic }}/date=%Y-%m-%d/"
+filename_append_uuid = true
+
+[sinks.minio_storage.batch]
+max_events = 1000
+timeout_secs = 10
+
+[sinks.minio_storage.encoding]
+codec = "json"

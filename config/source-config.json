@@ -1,0 +1,15 @@
+{
+  "name": "sandbox-source-connector",
+  "config": {
+    "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+    "database.hostname": "postgres",
+    "database.port": "5432",
+    "database.user": "sandbox_user",
+    "database.password": "sandbox_pass",
+    "database.dbname": "sandbox_db",
+    "database.server.name": "dbserver1",
+    "topic.prefix": "sandbox",
+    "table.include.list": "public.orders,public.users,public.products",
+    "plugin.name": "pgoutput"
+  }
+}
