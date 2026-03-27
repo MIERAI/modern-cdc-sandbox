@@ -8,7 +8,7 @@ services:
     environment:
       MINIO_ROOT_USER: minio_admin
       MINIO_ROOT_PASSWORD: minio_password
-    volumes: ["./storage/prod-lake:/data"]
+    volumes: ["minio_data:/data"]
     command: server /data --console-address ":9001"
     deploy:
       resources:
@@ -164,6 +164,9 @@ services:
     environment:
       - SPARK_MASTER_PORT=7077
       - SPARK_MASTER_WEBUI_PORT=8080
+      - AWS_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=minio_admin
+      - AWS_SECRET_ACCESS_KEY=minio_password
     ports: ["8081:8080", "7077:7077"]
     volumes:
       - ./config/iceberg:/config/iceberg
@@ -173,7 +176,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1G
+          memory: 2G
 
   spark-worker:
     image: apache/spark:3.5.1
@@ -181,6 +184,11 @@ services:
     environment:
       - SPARK_MODE=worker
       - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_CORES=12
+      - SPARK_WORKER_MEMORY=4G
+      - AWS_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=minio_admin
+      - AWS_SECRET_ACCESS_KEY=minio_password
     volumes:
       - ./config/iceberg:/config/iceberg
       - ./scripts:/scripts
@@ -189,7 +197,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 2G
+          memory: 4G
 
   # --- 6. Query Layer (Trino) ---
   trino:
@@ -206,3 +214,6 @@ services:
         limits:
           memory: 2G
           cpus: '2'
+
+volumes:
+  minio_data:

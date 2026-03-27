@@ -1,27 +1,24 @@
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import from_json, col, to_date, expr
-from pyspark.sql.types import StructType, StringType, IntegerType, TimestampType
+from pyspark.sql.functions import from_json, col, to_date
+from pyspark.sql.types import StructType, IntegerType, TimestampType
 
-# Initialize Spark with Iceberg and Nessie support
+# Initialize Spark with exhaustive connection properties
 spark = SparkSession.builder \
     .appName("CDC-to-Iceberg-Ingestion") \
-    .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions") \
-    .config("spark.sql.catalog.nessie", "org.apache.iceberg.spark.SparkCatalog") \
-    .config("spark.sql.catalog.nessie.catalog-impl", "org.apache.iceberg.nessie.NessieCatalog") \
-    .config("spark.sql.catalog.nessie.uri", "http://nessie:19120/api/v1") \
-    .config("spark.sql.catalog.nessie.authentication.type", "NONE") \
-    .config("spark.sql.catalog.nessie.ref", "main") \
-    .config("spark.sql.catalog.nessie.warehouse", "s3a://modern-cdc-bucket/iceberg-warehouse") \
-    .config("spark.sql.catalog.nessie.io-impl", "org.apache.iceberg.aws.s3.S3FileIO") \
+    .config("spark.executor.memory", "2g") \
+    .config("spark.driver.memory", "1g") \
+    .config("spark.sql.catalog.nessie.s3.client.region", "us-east-1") \
     .config("spark.sql.catalog.nessie.s3.endpoint", "http://minio:9000") \
     .config("spark.sql.catalog.nessie.s3.path-style-access", "true") \
     .config("spark.sql.catalog.nessie.s3.access-key-id", "minio_admin") \
     .config("spark.sql.catalog.nessie.s3.secret-access-key", "minio_password") \
-    .config("spark.sql.catalog.nessie.client.region", "us-east-1") \
     .config("spark.hadoop.fs.s3a.endpoint", "http://minio:9000") \
     .config("spark.hadoop.fs.s3a.access.key", "minio_admin") \
     .config("spark.hadoop.fs.s3a.secret.key", "minio_password") \
     .config("spark.hadoop.fs.s3a.path.style.access", "true") \
+    .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false") \
+    .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem") \
+    .config("spark.hadoop.fs.s3a.endpoint.region", "us-east-1") \
     .getOrCreate()
 
 # Kafka source configuration
@@ -30,25 +27,25 @@ kafka_df = spark.readStream \
     .option("kafka.bootstrap.servers", "kafka-1:29092,kafka-2:29092,kafka-3:29092") \
     .option("subscribe", "prod.crm.public.orders") \
     .option("startingOffsets", "earliest") \
+    .option("failOnDataLoss", "false") \
     .load()
 
 # Debezium JSON Schema
 schema = StructType() \
-    .add("payload", StructType() \
-        .add("after", StructType() \
-            .add("id", IntegerType()) \
-            .add("user_id", IntegerType()) \
-            .add("product_id", IntegerType()) \
-            .add("quantity", IntegerType()) \
-            .add("created_at", TimestampType()) \
-        ) \
+    .add("after", StructType() \
+        .add("id", IntegerType()) \
+        .add("user_id", IntegerType()) \
+        .add("product_id", IntegerType()) \
+        .add("quantity", IntegerType()) \
+        .add("updated_at", TimestampType()) \
     )
 
-# Extract and Flatten
+# Extract, Flatten and Map columns
 orders_df = kafka_df.selectExpr("CAST(value AS STRING)") \
     .select(from_json(col("value"), schema).alias("msg")) \
-    .select("msg.payload.after.*") \
+    .select("msg.after.*") \
     .filter(col("id").isNotNull()) \
+    .withColumnRenamed("updated_at", "created_at") \
     .withColumn("event_date", to_date(col("created_at")))
 
 # --- INITIALIZATION: Ensure Namespace and Table exist ---

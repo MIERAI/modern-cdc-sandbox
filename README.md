@@ -125,11 +125,52 @@ This sandbox is designed for learning and testing:
 - **Self-Healing**: Reboot the database and watch the pipeline automatically re-establish connectivity.
 - **Schema Evolution**: Add columns to Postgres and observe how Debezium adapts.
 
-## Production Readiness
+## Production Mode (Lakehouse / Iceberg)
 
-While this sandbox is perfect for local experimentation, running a CDC pipeline at scale requires additional hardening (High Availability, Schema Registry, Monitoring).
+For advanced users, this sandbox includes a **Production Mode** that simulates a modern Lakehouse architecture using **Apache Iceberg**, **Project Nessie**, and **Spark Streaming**.
 
-Check out the [Production Readiness Guide](./docs/production-readiness.md) for a detailed breakdown of the gaps and solutions.
+### 1. Launch Production Cluster
+This mode requires at least 16GB RAM allocated to Docker.
+```bash
+make prod-up
+```
+
+### 2. Register Multi-Source Connectors
+```bash
+make prod-setup
+```
+
+### 3. Initialize Data & Topics
+**Important**: Debezium only creates Kafka topics when it detects data. If you start Spark before injecting data, it will fail with `UnknownTopicOrPartitionException`.
+```bash
+make stress-bulk
+```
+
+### 4. Start Spark Ingestion
+```bash
+make spark-submit
+```
+
+### 5. Query the Data Lake (via Trino)
+Once the Spark job shows "numOutputRows: 100000", you can query the data using Trino:
+```bash
+docker exec mini-data-lake-cdc-trino-1 trino --execute "SELECT count(*) FROM iceberg.db.orders"
+```
+
+### Troubleshooting Production Mode
+
+- **Topic Not Found**: If Spark fails to find a topic, ensure you've run `make stress-bulk` to trigger Debezium's capture.
+- **Offset Mismatch / Data Loss Error**: If the Spark job fails after a restart with an offset error, reset the checkpoints:
+  ```bash
+  make prod-reset-checkpoint
+  make spark-submit
+  ```
+- **Resource Constraints**: If Spark hangs with "Initial job has not accepted any resources", restart the Spark cluster:
+  ```bash
+  docker restart mini-data-lake-cdc-spark-master-1 mini-data-lake-cdc-spark-worker-1
+  ```
+
+---
 
 ## License
 MIT

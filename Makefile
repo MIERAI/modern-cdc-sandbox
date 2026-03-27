@@ -33,11 +33,17 @@ prod-setup:
 
 spark-submit:
 	@echo "Submitting Iceberg Ingestion Job to Spark..."
+	@echo "Note: If this fails with 'UnknownTopicOrPartitionException', run 'make stress-bulk' first to trigger topic creation."
 	@docker exec mini-data-lake-cdc-spark-master-1 /opt/spark/bin/spark-submit \
 		--master spark://spark-master:7077 \
+		--conf spark.jars.ivy=/tmp/spark-ivy-cache \
 		--packages org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.5.2,org.apache.iceberg:iceberg-nessie:1.5.2,org.apache.iceberg:iceberg-aws-bundle:1.5.2,org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1,org.apache.hadoop:hadoop-aws:3.3.4 \
 		--properties-file /config/iceberg/spark-defaults.conf \
 		/scripts/iceberg-ingestion.py
+
+prod-reset-checkpoint:
+	@echo "Clearing Spark Checkpoints in MinIO..."
+	@docker exec $$(docker ps -qf "name=minio") mc rm -r --force myminio/modern-cdc-bucket/checkpoints/orders || true
 
 prod-down:
 	docker-compose -f docker-compose.prod.yml down -v
