@@ -127,48 +127,88 @@ This sandbox is designed for learning and testing:
 
 ## Production Mode (Lakehouse / Iceberg)
 
-For advanced users, this sandbox includes a **Production Mode** that simulates a modern Lakehouse architecture using **Apache Iceberg**, **Project Nessie**, and **Spark Streaming**.
+This mode simulates a robust **real-time Lakehouse** architecture. It transitions from simple event aggregation to a formal data lake using **Apache Iceberg** for table management, **Project Nessie** for catalog versioning, and **Spark Streaming** for transactional ingestion.
 
-### 1. Launch Production Cluster
-This mode requires at least 16GB RAM allocated to Docker.
-```bash
-make prod-up
+### Production Architecture
+
+```mermaid
+graph TD
+    subgraph "Source Tier"
+        DB1[(Postgres CRM)] -- "WAL" --> DBZ
+        DB2[(Postgres ERP)] -- "WAL" --> DBZ
+        DBZ[Debezium Connect]
+    end
+
+    subgraph "Message Bus (3-Node Cluster)"
+        DBZ -- "JSON Events" --> K1[Kafka Broker 1]
+        DBZ -- "JSON Events" --> K2[Kafka Broker 2]
+        DBZ -- "JSON Events" --> K3[Kafka Broker 3]
+    end
+
+    subgraph "Compute Tier (Spark Cluster)"
+        K1 & K2 & K3 --> SS[Spark Streaming]
+        SS -- "ACID Writes" --> Iceberg
+    end
+
+    subgraph "Storage & Metadata"
+        Nessie[Nessie Catalog] <--> Iceberg
+        Iceberg[(MinIO / S3 Storage)]
+    end
+
+    subgraph "Analytics Tier"
+        Iceberg --> Trino[Trino SQL Engine]
+        Trino --> BI[BI / Notebooks]
+    end
+
+    style SS fill:#f96,stroke:#333
+    style Nessie fill:#e1f5fe,stroke:#01579b
+    style Iceberg fill:#f3e5f5,stroke:#4a148c
 ```
 
-### 2. Register Multi-Source Connectors
-```bash
-make prod-setup
-```
+### Standard Execution Order
 
-### 3. Initialize Data & Topics
-**Important**: Debezium only creates Kafka topics when it detects data. If you start Spark before injecting data, it will fail with `UnknownTopicOrPartitionException`.
-```bash
-make stress-bulk
-```
+To ensure a successful deployment, follow this exact sequence:
 
-### 4. Start Spark Ingestion
-```bash
-make spark-submit
-```
+1.  **Launch Cluster**: Build and start all 16 containers with optimized resources.
+    ```bash
+    make prod-up
+    ```
+2.  **Register Connectors**: Activate CDC pipelines for all source databases.
+    ```bash
+    make prod-setup
+    ```
+3.  **Initialize Data (Crucial)**: Inject initial records to trigger Kafka topic creation.
+    ```bash
+    # Debezium only creates topics when it detects data.
+    # Spark will fail if topics do not exist.
+    make stress-bulk
+    ```
+4.  **Start Ingestion**: Submit the Spark job to process the stream into Iceberg.
+    ```bash
+    # This runs in the foreground so you can observe the 'numOutputRows: 100000' log.
+    make spark-submit
+    ```
+5.  **Query & Verify**: Use Trino to perform OLAP queries on the data lake.
+    ```bash
+    docker exec mini-data-lake-cdc-trino-1 trino --execute "SELECT count(*) FROM iceberg.db.orders"
+    ```
 
-### 5. Query the Data Lake (via Trino)
-Once the Spark job shows "numOutputRows: 100000", you can query the data using Trino:
-```bash
-docker exec mini-data-lake-cdc-trino-1 trino --execute "SELECT count(*) FROM iceberg.db.orders"
-```
+### Core Precautions & Optimizations
 
-### Troubleshooting Production Mode
+-   **Automatic Cleanup**: We use **Docker Named Volumes** (`minio_data`). Running `make prod-down` will completely wipe the data lake and checkpoints, ensuring your next test starts from a truly clean slate.
+-   **Resource Allocation**: The production Spark Worker is configured with **4GB RAM** and **12 Cores** to prevent scheduling hangs during high-throughput ingestion.
+-   **Jar Consistency**: The system is tuned to use a shared Ivy cache (`/tmp/spark-ivy-cache`). This ensures the Spark Driver and Executors use identical Iceberg library versions, preventing `InvalidClassException`.
+-   **S3 Connectivity**: AWS Region and Credentials are pre-injected into the Spark environment variables, ensuring stable connectivity between Spark and MinIO without complex code overrides.
+-   **Schema Resilience**: The ingestion script handles Debezium's simplified JSON format (`schemas.enable=false`) and automatically maps `updated_at` to the Iceberg `created_at` partition column.
 
-- **Topic Not Found**: If Spark fails to find a topic, ensure you've run `make stress-bulk` to trigger Debezium's capture.
-- **Offset Mismatch / Data Loss Error**: If the Spark job fails after a restart with an offset error, reset the checkpoints:
-  ```bash
-  make prod-reset-checkpoint
-  make spark-submit
-  ```
-- **Resource Constraints**: If Spark hangs with "Initial job has not accepted any resources", restart the Spark cluster:
-  ```bash
-  docker restart mini-data-lake-cdc-spark-master-1 mini-data-lake-cdc-spark-worker-1
-  ```
+### Troubleshooting
+
+| Issue | Root Cause | Solution |
+| :--- | :--- | :--- |
+| `UnknownTopicOrPartition` | Topics not created yet | Run `make stress-bulk` before starting Spark |
+| `InvalidClassException` | Jar version mismatch | Run `make prod-down` and clear `storage/spark-cache` |
+| `Initial job not accepted` | Worker resource starvation | Wait 15s or `docker restart spark-master spark-worker` |
+| No data in Trino | Offset mismatch in Checkpoint | Run `make prod-reset-checkpoint` |
 
 ---
 
