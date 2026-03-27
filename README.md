@@ -210,6 +210,26 @@ To ensure a successful deployment, follow this exact sequence:
 | `Initial job not accepted` | Worker resource starvation | Wait 15s or `docker restart spark-master spark-worker` |
 | No data in Trino | Offset mismatch in Checkpoint | Run `make prod-reset-checkpoint` |
 
+## Future Roadmap
+
+This sandbox establishes the core pipeline. Future evolutions for production-grade environments include:
+
+1.  **Multi-Source Integration**:
+    *   Extend Debezium connectors to support **MySQL** and **MongoDB**.
+    *   Implement unified Schema governance across heterogeneous sources in Kafka.
+2.  **Medallion Architecture Governance**:
+    *   **Bronze -> Silver**: Implement automated data cleaning, deduplication, and Upsert (Merge) logic in Spark.
+    *   **Silver -> Gold**: Build highly aggregated feature layers based on business requirements.
+3.  **Data Versioning (Git-for-Data)**:
+    *   Deeply integrate **Project Nessie** branching to isolate data experiments from production.
+    *   Utilize Nessie Tags for point-in-time snapshot rollbacks.
+4.  **Unified Compute Strategy**:
+    *   Leverage **Trino** for sub-second Ad-hoc queries and cross-source JOINs.
+    *   Leverage **Spark** for massive historical re-processing and ML feature engineering.
+5.  **Full-Stack Observability**:
+    *   Integrate **Prometheus** to collect JMX metrics from Kafka, Spark, and Trino.
+    *   Build **Grafana** dashboards with threshold-based alerting.
+
 ---
 
 ## License
