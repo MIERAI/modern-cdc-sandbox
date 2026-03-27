@@ -1,57 +1,208 @@
-# Enterprise-Grade CDC Blueprint (Skeleton)
-# Note: This is for architectural reference, not intended for local 8GB RAM machines.
+version: '3.8'
 
 services:
-  # 3-Node Kafka Cluster (KRaft Mode)
+  # --- 1. Infrastructure Infrastructure (Storage & Registry) ---
+  minio:
+    image: minio/minio
+    ports: ["9000:9000", "9001:9001"]
+    environment:
+      MINIO_ROOT_USER: minio_admin
+      MINIO_ROOT_PASSWORD: minio_password
+    volumes: ["./storage/prod-lake:/data"]
+    command: server /data --console-address ":9001"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  nessie:
+    image: projectnessie/nessie:latest
+    ports: ["19120:19120"]
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  # --- 2. Production Kafka Cluster (3 Brokers) ---
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
   kafka-1:
     image: confluentinc/cp-kafka:7.5.0
+    depends_on: [zookeeper]
+    ports: ["9092:9092"]
     environment:
-      KAFKA_NODE_ID: 1
-      KAFKA_PROCESS_ROLES: 'broker,controller'
-      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka-1:9093,2@kafka-2:9093,3@kafka-3:9093'
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-1:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+    deploy:
+      resources:
+        limits:
+          memory: 1G
 
   kafka-2:
     image: confluentinc/cp-kafka:7.5.0
+    depends_on: [zookeeper]
+    ports: ["9093:9093"]
     environment:
-      KAFKA_NODE_ID: 2
-      KAFKA_PROCESS_ROLES: 'broker,controller'
-      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka-1:9093,2@kafka-2:9093,3@kafka-3:9093'
+      KAFKA_BROKER_ID: 2
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-2:29092,PLAINTEXT_HOST://localhost:9093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+    deploy:
+      resources:
+        limits:
+          memory: 1G
 
   kafka-3:
     image: confluentinc/cp-kafka:7.5.0
+    depends_on: [zookeeper]
+    ports: ["9094:9094"]
     environment:
-      KAFKA_NODE_ID: 3
-      KAFKA_PROCESS_ROLES: 'broker,controller'
-      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka-1:9093,2@kafka-2:9093,3@kafka-3:9093'
+      KAFKA_BROKER_ID: 3
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9094
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-3:29092,PLAINTEXT_HOST://localhost:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+    deploy:
+      resources:
+        limits:
+          memory: 1G
 
-  # Distributed Debezium Workers
-  connect-worker-1:
-    image: debezium/connect:2.4
+  console:
+    image: docker.redpanda.com/redpandadata/console:latest
+    depends_on: [kafka-1]
+    ports: ["8080:8080"]
     environment:
-      GROUP_ID: debezium-cluster
-      CONFIG_STORAGE_TOPIC: connect-configs
-      OFFSET_STORAGE_TOPIC: connect-offsets
-      STATUS_STORAGE_TOPIC: connect-status
+      KAFKA_BROKERS: kafka-1:29092,kafka-2:29092,kafka-3:29092
+
+  # --- 3. Multi-Source Databases ---
+  postgres-crm:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: crm_user
+      POSTGRES_PASSWORD: crm_pass
+      POSTGRES_DB: crm_db
+    command: ["postgres", "-c", "wal_level=logical", "-c", "max_replication_slots=10"]
+    ports: ["5435:5432"]
+    volumes:
+      - ./init-sql:/docker-entrypoint-initdb.d
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  postgres-erp:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: erp_user
+      POSTGRES_PASSWORD: erp_pass
+      POSTGRES_DB: erp_db
+    command: ["postgres", "-c", "wal_level=logical", "-c", "max_replication_slots=10"]
+    ports: ["5436:5432"]
+    volumes:
+      - ./init-sql:/docker-entrypoint-initdb.d
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  postgres-inventory:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: inv_user
+      POSTGRES_PASSWORD: inv_pass
+      POSTGRES_DB: inv_db
+    command: ["postgres", "-c", "wal_level=logical", "-c", "max_replication_slots=10"]
+    ports: ["5437:5432"]
+    volumes:
+      - ./init-sql:/docker-entrypoint-initdb.d
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # --- 4. Distributed Debezium Connect ---
+  connect:
+    image: debezium/connect:2.4
+    depends_on: [kafka-1, kafka-2, kafka-3, postgres-crm, postgres-erp]
+    ports: ["8083:8083"]
+    environment:
+      BOOTSTRAP_SERVERS: kafka-1:29092,kafka-2:29092,kafka-3:29092
+      GROUP_ID: debezium-prod-cluster
+      CONFIG_STORAGE_TOPIC: prod_connect_configs
+      OFFSET_STORAGE_TOPIC: prod_connect_offsets
+      STATUS_STORAGE_TOPIC: prod_connect_status
       CONFIG_STORAGE_REPLICATION_FACTOR: 3
       OFFSET_STORAGE_REPLICATION_FACTOR: 3
       STATUS_STORAGE_REPLICATION_FACTOR: 3
+      KEY_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+    deploy:
+      resources:
+        limits:
+          memory: 2G
 
-  connect-worker-2:
-    image: debezium/connect:2.4
+  # --- 5. Lakehouse Ingestion (Spark) ---
+  spark-master:
+    image: apache/spark:3.5.1
     environment:
-      GROUP_ID: debezium-cluster
-      # Same topics as worker-1 to form a cluster
+      - SPARK_MASTER_PORT=7077
+      - SPARK_MASTER_WEBUI_PORT=8080
+    ports: ["8081:8080", "7077:7077"]
+    volumes:
+      - ./config/iceberg:/config/iceberg
+      - ./scripts:/scripts
+      - ./storage/spark-cache:/tmp/spark-ivy-cache
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
+    deploy:
+      resources:
+        limits:
+          memory: 1G
 
-  # Schema Registry for Data Integrity
-  schema-registry:
-    image: confluentinc/cp-schema-registry:7.5.0
-    depends_on: [kafka-1, kafka-2, kafka-3]
+  spark-worker:
+    image: apache/spark:3.5.1
+    depends_on: [spark-master]
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+    volumes:
+      - ./config/iceberg:/config/iceberg
+      - ./scripts:/scripts
+      - ./storage/spark-cache:/tmp/spark-ivy-cache
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
+    deploy:
+      resources:
+        limits:
+          memory: 2G
 
-  # Monitoring Stack
-  prometheus:
-    image: prom/prometheus
-  
-  grafana:
-    image: grafana/grafana
+  # --- 6. Query Layer (Trino) ---
+  trino:
+    image: trinodb/trino:435
+    depends_on: [nessie, minio]
+    ports: ["8082:8080"]
+    volumes:
+      - ./config/trino/catalog/iceberg.properties:/etc/trino/catalog/iceberg.properties
+    environment:
+      - JVM_MAX_MEMORY=1G
+      - JAVA_OPTS=-XX:UseSVE=0
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2'

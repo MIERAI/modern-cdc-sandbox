@@ -1,0 +1,20 @@
+{
+  "name": "erp-source-connector",
+  "config": {
+    "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+    "database.hostname": "postgres-erp",
+    "database.port": "5432",
+    "database.user": "erp_user",
+    "database.password": "erp_pass",
+    "database.dbname": "erp_db",
+    "topic.prefix": "prod.erp",
+    "table.include.list": "public.inventory,public.warehouses",
+    "plugin.name": "pgoutput",
+    "slot.name": "erp_debezium_slot",
+    "publication.name": "erp_publication",
+    "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "key.converter.schemas.enable": "false",
+    "value.converter.schemas.enable": "false"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "name": "inventory-source-connector",
+  "config": {
+    "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+    "database.hostname": "postgres-inventory",
+    "database.port": "5432",
+    "database.user": "inv_user",
+    "database.password": "inv_pass",
+    "database.dbname": "inv_db",
+    "topic.prefix": "prod.inv",
+    "table.include.list": "public.inventory,public.warehouses",
+    "plugin.name": "pgoutput",
+    "slot.name": "inv_debezium_slot",
+    "publication.name": "inv_publication",
+    "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "key.converter.schemas.enable": "false",
+    "value.converter.schemas.enable": "false"
+  }
+}
